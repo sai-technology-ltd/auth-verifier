@@ -2,7 +2,7 @@
 
 Standalone JWT verification service for Traefik ForwardAuth.
 
-It validates Supabase access tokens using JWKS and, on success, forwards trusted identity headers to downstream services.
+It validates Supabase access tokens using JWKS and, on success, forwards minimal trusted identity headers to downstream services.
 
 ## What it does
 - Verifies `Authorization: Bearer <token>`
@@ -15,12 +15,10 @@ It validates Supabase access tokens using JWKS and, on success, forwards trusted
 ## Endpoints
 - `GET /health`
 - `GET /verify`
-- `POST /verify`
 
 ## Forwarded headers (success)
 - `x-user-id`
 - `x-user-role`
-- `x-user-permissions` (comma-separated)
 
 ## Environment
 Copy `.env.example` and set:
@@ -28,11 +26,17 @@ Copy `.env.example` and set:
 - `SUPABASE_AUDIENCE` (optional)
 - `SUPABASE_JWKS_URL` (optional; defaults to `${SUPABASE_ISSUER}/.well-known/jwks.json`)
 - `PORT` (default `3001`)
+- `TRUSTED_PROXY_IPS` (optional comma-separated allowlist for caller source IP)
 
 ## Local development
 ```bash
 npm install
 npm run dev
+```
+
+## Test
+```bash
+npm test
 ```
 
 ## Build & run
@@ -58,7 +62,6 @@ http:
         authResponseHeaders:
           - X-User-Id
           - X-User-Role
-          - X-User-Permissions
 ```
 
 ## CI/CD
