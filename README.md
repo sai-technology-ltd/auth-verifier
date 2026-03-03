@@ -26,6 +26,7 @@ Copy `.env.example` and set:
 - `SUPABASE_AUDIENCE` (optional)
 - `SUPABASE_JWKS_URL` (optional; defaults to `${SUPABASE_ISSUER}/.well-known/jwks.json`)
 - `PORT` (default `3001`)
+- `LOG_LEVEL` (`error` | `warn` | `info`, default `info`)
 - `TRUSTED_PROXY_IPS` (optional comma-separated allowlist for caller source IP)
 
 ## Local development
@@ -74,3 +75,17 @@ It builds and pushes multi-arch images to:
 Required repo secrets:
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
+
+## Troubleshooting auth failures
+- Check verifier logs for `verify request`, `verify missing bearer token`, `verify unauthorized`, or `verify success`.
+- Confirm `SUPABASE_ISSUER` matches token `iss` exactly (including path and trailing slash behavior).
+- If `SUPABASE_AUDIENCE` is set, confirm it matches token `aud` (Supabase is often `authenticated`).
+- In Traefik `forwardAuth`, explicitly forward the auth header if needed:
+
+```yaml
+forwardAuth:
+  address: "http://auth-verifier:3001/verify"
+  trustForwardHeader: true
+  authRequestHeaders:
+    - Authorization
+```
