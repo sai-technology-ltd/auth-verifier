@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { JWTPayload } from 'jose';
 
 export type VerifyJwtFn = (token: string) => Promise<JWTPayload>;
@@ -8,6 +9,7 @@ type AppConfig = {
   forwardedUserIdHeader: string;
   forwardedRoleHeader: string;
   trustedProxyIps?: string[];
+  log?: (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 };
 
 function normalizeIp(ip?: string | null): string {
@@ -36,32 +38,60 @@ function getBearer(auth?: string): string | null {
 
 export function createApp(cfg: AppConfig) {
   const app = express();
+  const log = cfg.log || (() => undefined);
 
   app.get('/health', (_req, res) => res.status(200).json({ ok: true }));
 
   app.get('/verify', async (req, res) => {
+    const requestId = req.header('x-request-id') || randomUUID();
+    const sourceIp = firstForwardedIp(req.header('x-forwarded-for') || undefined) || normalizeIp(req.socket.remoteAddress);
+    const authorization = req.header('authorization') || '';
+
+    log('info', 'verify request', {
+      requestId,
+      sourceIp,
+      method: req.header('x-forwarded-method') || req.method,
+      uri: req.header('x-forwarded-uri') || req.originalUrl,
+      hasAuthorizationHeader: Boolean(authorization),
+      authorizationScheme: authorization ? authorization.split(' ')[0] : undefined,
+      host: req.header('x-forwarded-host') || req.header('host'),
+      origin: req.header('origin'),
+    });
+
     try {
       if (cfg.trustedProxyIps && cfg.trustedProxyIps.length > 0) {
-        const fromHeader = firstForwardedIp(req.header('x-forwarded-for') || undefined);
-        const fromSocket = normalizeIp(req.socket.remoteAddress);
-        const source = fromHeader || fromSocket;
+        const source = sourceIp;
         if (!cfg.trustedProxyIps.includes(source)) {
+          log('warn', 'verify blocked by trusted proxy ip list', { requestId, sourceIp });
           return res.status(403).json({ ok: false, error: 'Forbidden source' });
         }
       }
 
-      const token = getBearer(req.header('authorization') || undefined);
-      if (!token) return res.status(401).json({ ok: false, error: 'Missing bearer token' });
+      const token = getBearer(authorization || undefined);
+      if (!token) {
+        log('warn', 'verify missing bearer token', { requestId, sourceIp });
+        return res.status(401).json({ ok: false, error: 'Missing bearer token' });
+      }
 
       const payload = await cfg.verifyJwt(token);
       const userId = String(payload.sub || '');
-      if (!userId) return res.status(401).json({ ok: false, error: 'Invalid subject claim' });
+      if (!userId) {
+        log('warn', 'verify invalid subject claim', { requestId, sourceIp });
+        return res.status(401).json({ ok: false, error: 'Invalid subject claim' });
+      }
 
       const role = roleFromClaims(payload);
       res.setHeader(cfg.forwardedUserIdHeader, userId);
       res.setHeader(cfg.forwardedRoleHeader, role);
+      log('info', 'verify success', { requestId, sourceIp, userId, role });
       return res.status(200).json({ ok: true, userId, role });
     } catch (err: any) {
+      log('warn', 'verify unauthorized', {
+        requestId,
+        sourceIp,
+        errorName: err?.name,
+        errorMessage: err?.message,
+      });
       return res.status(401).json({ ok: false, error: 'Unauthorized', detail: err?.message || 'invalid_token' });
     }
   });
