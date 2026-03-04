@@ -1,7 +1,9 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# CI arm64 under QEMU can crash on optional/native postinstall scripts
+# from dev dependencies; tsc build does not require those scripts.
+RUN npm ci --ignore-scripts
 
 FROM deps AS build
 COPY tsconfig.json ./
